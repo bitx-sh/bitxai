@@ -22,9 +22,23 @@ if (!existsSync("prompt.md")) {
 // Read the agent's prompt from filesystem
 const agentPrompt = await Bun.file("prompt.md").text();
 
+//Implementation of FileSystemChatHistory (Needs to be added separately)
+class FileSystemChatHistory {
+    async addMessage(message: { role: string; content: string; timestamp: number; messageId: string }) {
+        //Implementation to save message to file system.  This is a placeholder.  Replace with actual file system writing logic.
+        console.log("Message added to chat history:", message);
+    }
+    async getMessages() {
+        //Implementation to retrieve messages from file system. This is a placeholder. Replace with actual file system reading logic.
+        return [];
+    }
+}
+
+
 export class AIArchitectAgent {
   private model: ChatAnthropic;
   private chain: RunnableSequence;
+  private chatHistory: FileSystemChatHistory;
 
   constructor() {
     if (!process.env.ANTHROPIC_API_KEY) {
@@ -32,17 +46,18 @@ export class AIArchitectAgent {
     }
 
     this.model = new ChatAnthropic({
-      anthropicApiKey: process.env.ANTHROPIC_API_KEY, // Changed from apiKey to anthropicApiKey
-      modelName: "claude-3-5-sonnet-latest", // Updated model name
+      anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+      modelName: "claude-3-5-sonnet-latest",
     });
 
+    this.chatHistory = new FileSystemChatHistory();
     this.initializeChain();
   }
 
   private async initializeChain() {
     const prompt = ChatPromptTemplate.fromMessages([
       ["system", agentPrompt],
-      ...messages.map(([role, content]) => [role, content]),
+      //...messages.map(([role, content]) => [role, content]),
       ["human", "{query}"],
       new MessagesPlaceholder("chat_history"),
     ]);
@@ -50,7 +65,7 @@ export class AIArchitectAgent {
     this.chain = RunnableSequence.from([
       {
         query: new RunnablePassthrough(),
-        chat_history: async () => [], // Made async
+        chat_history: async () => await this.chatHistory.getMessages(), // Made async and retrieves from chatHistory
         context: async (input: { query: string }) => {
           if (input.query.toLowerCase().includes("president")) {
             const loader = new CheerioWebBaseLoader(
@@ -69,12 +84,15 @@ export class AIArchitectAgent {
   }
 
   async process(input: string): Promise<string> {
-    return await this.chain.invoke({ query: input }); // Changed from input to query
+    await this.chatHistory.addMessage({ role: 'user', content: input, timestamp: Date.now(), messageId: '' });
+    const response = await this.chain.invoke({ query: input });
+    await this.chatHistory.addMessage({ role: 'assistant', content: response, timestamp: Date.now(), messageId: '' });
+    return response;
   }
 
   async updatePrompt(newPrompt: string): Promise<void> {
     await Bun.write("prompt.md", newPrompt);
-    await this.initializeChain(); // Made async
+    await this.initializeChain(); 
   }
 }
 
