@@ -4,7 +4,7 @@ hidden = [".config", "bun.lockb"]
 modules = ["bun-1.1"]
 
 [nix]
-channel = "stable-24_05"
+channel = "unstable"
 
 [deployment]
 build = [
@@ -13,8 +13,5 @@ build = [
   "mkdir .build && bun build --compile src/index.ts -o .bin/bitai",
 ]
 run = ["bun", "src/index.ts"]
-deploymentTarget = "cloudrun"
 
 [[ports]]
-localPort = 3000
-externalPort = 80

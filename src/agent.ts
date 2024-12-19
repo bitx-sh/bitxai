@@ -1,10 +1,22 @@
-
-#!/usr/bin/env bun
-
 import { ChatAnthropicMessages } from "@langchain/anthropic";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
 import { existsSync } from 'node:fs';
+import {
+  START,
+  END,
+  MessagesAnnotation,
+  StateGraph,
+  MemorySaver,
+} from "@langchain/langgraph";
+
+import { AIMessage, BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { StateGraph } from "@langchain/langgraph";
+import { MemorySaver, Annotation, messagesStateReducer } from "@langchain/langgraph";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
 
 // Check if prompt file exists
 if (!existsSync("prompt.md")) {
@@ -36,7 +48,7 @@ export class AIArchitectAgent {
 
     this.model = new ChatAnthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
-      model: "claude-3-sonnet-20240229",
+      model: "claude-3-5-sonnet-20241022",
     });
 
     this.initializeChain();
@@ -52,7 +64,7 @@ export class AIArchitectAgent {
     this.chain = RunnableSequence.from([
       {
         input: new RunnablePassthrough(),
-        chat_history: () => [], 
+        chat_history: () => [],
         context: async (input: { input: string }) => {
           if (input.input.includes("president")) {
             const loader = new CheerioWebBaseLoader(

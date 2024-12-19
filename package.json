@@ -30,6 +30,7 @@
     "@langchain/anthropic": "^0.3.11",
     "@langchain/community": "^0.3.19",
     "@langchain/core": "^0.3.25",
+    "@langchain/langgraph": "^0.2.34",
     "@types/node": "^22.10.2",
     "axios": "^1.7.9",
     "cheerio": "^1.0.0",
