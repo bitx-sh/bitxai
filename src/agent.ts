@@ -42,8 +42,8 @@ export class AIArchitectAgent {
   private async initializeChain() {
     const prompt = ChatPromptTemplate.fromMessages([
       ["system", agentPrompt],
-      //...messages,
-      ["human", "{query}"], // Changed from input to query to match the invoke
+      ...messages.map(([role, content]) => [role, content]),
+      ["human", "{query}"],
       new MessagesPlaceholder("chat_history"),
     ]);
 
