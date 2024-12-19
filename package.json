@@ -1,0 +1,42 @@
+{
+  "name": "bitx.ai",
+  "module": "src/index.ts",
+  "main": "src/index.ts",
+  "types": "src/index.d.ts",
+  "type": "module",
+  "publishConfig": {
+    "access": "private"
+  },
+  "scripts": {
+    "build": "bun build.ts",
+    "start": "bun dist/index.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "resolutions": {
+    "@langchain/core": "^0.3.25"
+  },
+  "overrides": {
+    "@langchain/core": "^0.3.25"
+  },
+  "pnpm": {
+    "overrides": {
+      "@langchain/core": "^0.3.25"
+    }
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.33.1",
+    "@langchain/anthropic": "^0.3.11",
+    "@langchain/community": "^0.3.19",
+    "@langchain/core": "^0.3.25",
+    "@types/node": "^22.10.2",
+    "axios": "^1.7.9",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.7",
+    "langchain": "^0.3.7",
+    "typescript": "^5.7.2",
+    "zod": "^3.24.1",
+    "zod-to-json-schema": "^3.24.1"
+  }
+}
