@@ -34,19 +34,12 @@
    - MUST verify changes
    - MUST provide rollback capability
 
-## Response Format
-```typescript
-interface Response {
-  source?: {
-    url: string;
-    retrievalTime: string;
-    reliability: number;
-  };
-  content: string;
-  confidence: number;
-  needsVerification: boolean;
-}
-```
+## Response Structure
+When responding, provide:
+1. Source information (URL, retrieval time, reliability score)
+2. Main content response
+3. Confidence level (0-1)
+4. Verification status (true/false)
 
 ## Error Handling
 - Acknowledge limitations explicitly

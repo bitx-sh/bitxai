@@ -1,28 +1,6 @@
-import { ChatAnthropicMessages } from "@langchain/anthropic";
 import { ChatAnthropic } from "@langchain/anthropic";
-import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
+import { CheerioWebBaseLoader } from "langchain/document_loaders/web/cheerio";
 import { existsSync } from 'node:fs';
-import {
-  START,
-  END,
-  MessagesAnnotation,
-  StateGraph,
-  MemorySaver,
-} from "@langchain/langgraph";
-
-import { AIMessage, BaseMessage, HumanMessage } from "@langchain/core/messages";
-import { tool } from "@langchain/core/tools";
-import { z } from "zod";
-import { ChatAnthropic } from "@langchain/anthropic";
-import { StateGraph } from "@langchain/langgraph";
-import { MemorySaver, Annotation, messagesStateReducer } from "@langchain/langgraph";
-import { ToolNode } from "@langchain/langgraph/prebuilt";
-
-// Check if prompt file exists
-if (!existsSync("prompt.md")) {
-  throw new Error("prompt.md file not found");
-}
-
 import {
   RunnableSequence,
   RunnablePassthrough
@@ -33,6 +11,11 @@ import {
   ChatPromptTemplate,
   MessagesPlaceholder
 } from "@langchain/core/prompts";
+
+// Check if prompt file exists
+if (!existsSync("prompt.md")) {
+  throw new Error("prompt.md file not found");
+}
 
 // Read the agent's prompt from filesystem
 const agentPrompt = await Bun.file("prompt.md").text();
@@ -47,26 +30,26 @@ export class AIArchitectAgent {
     }
 
     this.model = new ChatAnthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-      model: "claude-3-5-sonnet-20241022",
+      anthropicApiKey: process.env.ANTHROPIC_API_KEY, // Changed from apiKey to anthropicApiKey
+      modelName: "claude-3-sonnet-20240229", // Updated model name
     });
 
     this.initializeChain();
   }
 
-  private initializeChain() {
+  private async initializeChain() {
     const prompt = ChatPromptTemplate.fromMessages([
       ["system", agentPrompt],
-      ["human", "{input}"],
+      ["human", "{query}"], // Changed from input to query to match the invoke
       new MessagesPlaceholder("chat_history"),
     ]);
 
     this.chain = RunnableSequence.from([
       {
-        input: new RunnablePassthrough(),
-        chat_history: () => [],
-        context: async (input: { input: string }) => {
-          if (input.input.includes("president")) {
+        query: new RunnablePassthrough(),
+        chat_history: async () => [], // Made async
+        context: async (input: { query: string }) => {
+          if (input.query.toLowerCase().includes("president")) {
             const loader = new CheerioWebBaseLoader(
               "https://www.whitehouse.gov/administration/president-biden/"
             );
@@ -83,12 +66,12 @@ export class AIArchitectAgent {
   }
 
   async process(input: string): Promise<string> {
-    return await this.chain.invoke({ input });
+    return await this.chain.invoke({ query: input }); // Changed from input to query
   }
 
   async updatePrompt(newPrompt: string): Promise<void> {
     await Bun.write("prompt.md", newPrompt);
-    this.initializeChain();
+    await this.initializeChain(); // Made async
   }
 }
 
