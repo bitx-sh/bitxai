@@ -1,16 +1,18 @@
 import { ChatAnthropic } from "@langchain/anthropic";
 import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
-import { existsSync } from 'node:fs';
+import { existsSync } from "node:fs";
 import {
   RunnableSequence,
-  RunnablePassthrough
+  RunnablePassthrough,
 } from "@langchain/core/runnables";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { formatDocumentsAsString } from "langchain/util/document";
 import {
   ChatPromptTemplate,
-  MessagesPlaceholder
+  MessagesPlaceholder,
 } from "@langchain/core/prompts";
+
+import { messages } from "../history/chat.json";
 
 // Check if prompt file exists
 if (!existsSync("prompt.md")) {
@@ -31,7 +33,7 @@ export class AIArchitectAgent {
 
     this.model = new ChatAnthropic({
       anthropicApiKey: process.env.ANTHROPIC_API_KEY, // Changed from apiKey to anthropicApiKey
-      modelName: "claude-3-sonnet-20240229", // Updated model name
+      modelName: "claude-3-5-sonnet-latest", // Updated model name
     });
 
     this.initializeChain();
@@ -40,6 +42,7 @@ export class AIArchitectAgent {
   private async initializeChain() {
     const prompt = ChatPromptTemplate.fromMessages([
       ["system", agentPrompt],
+      //...messages,
       ["human", "{query}"], // Changed from input to query to match the invoke
       new MessagesPlaceholder("chat_history"),
     ]);
@@ -51,7 +54,7 @@ export class AIArchitectAgent {
         context: async (input: { query: string }) => {
           if (input.query.toLowerCase().includes("president")) {
             const loader = new CheerioWebBaseLoader(
-              "https://www.whitehouse.gov/administration/president-biden/"
+              "https://www.whitehouse.gov/administration/president-biden/",
             );
             const docs = await loader.load();
             return formatDocumentsAsString(docs);
