@@ -41,7 +41,7 @@ export class AIArchitectAgent {
     const prompt = ChatPromptTemplate.fromMessages([
       ["system", agentPrompt],
       ["human", "{input}"],
-      new MessagesPlaceholder("chat_history"),
+      new MessagesPlaceholder("chat_history")
     ]);
 
     this.chain = RunnableSequence.from([
