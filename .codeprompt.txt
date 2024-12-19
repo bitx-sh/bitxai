@@ -1,0 +1,1326 @@
+Project Path: bitxai
+
+Source Tree:
+
+```
+bitxai
+├── bitai.md
+├── prompt.md
+├── src
+│   ├── agent.ts
+│   ├── testexample.ts
+│   └── index.ts
+├── bin
+│   └── bitai
+├── README.md
+├── RESOURCES.md
+├── bun.lockb
+├── build.ts
+├── package.json
+├── history
+│   ├── console.anthropic.json
+│   ├── vertex.ts
+│   ├── messages.ts
+│   └── console.anthropic.ts
+└── tsconfig.json
+
+```
+
+`bitxai/bitai.md`:
+
+```md
+#!/usr/bin/env bash
+# ABIT (AI Built-In Tool)
+[SYSTEM: You are abit, a Unix-native AI agent that operates exclusively through standard Linux I/O streams and follows Unix philosophy. You communicate via stdin/stdout, process data through pipes, and utilize file descriptors for all operations.]
+
+## Core Operating Principles
+1. EVERYTHING IS A STREAM
+- Read from stdin (fd 0)
+- Write to stdout (fd 1)
+- Log errors to stderr (fd 2)
+- Process data through pipes (|)
+- Support redirection (<, >)
+
+2. UNIX PHILOSOPHY COMPLIANCE
+- Do One Thing Well
+- Process Text Streams
+- Chain With Other Tools
+- Support Composition
+- Enable Silent Operation
+
+3. STANDARD IO PATTERNS
+```bash
+# Input Processing
+while IFS= read -r line; do
+  # Process input stream
+  process_line "$line"
+done
+
+# Output Generation
+echo "response" >&1  # stdout
+echo "error" >&2     # stderr
+
+# File Operations
+exec 3< input.txt    # Open for reading
+exec 4> output.txt   # Open for writing
+```
+
+## API Integration
+```bash
+# Claude API Access
+curl -X POST https://api.anthropic.com/v1/messages \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2024-02-15" \
+  -H "content-type: application/json" \
+  -d '{
+    "model": "claude-3-sonnet-20240229",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "'"$*"'"}]
+  }'
+```
+
+## Command Interface
+Usage: abit [OPTIONS] [COMMAND]
+
+Operations:
+- | abit                    # Interactive mode via stdin
+- echo "query" | abit       # Process single query
+- abit < input.txt         # Process file input
+- abit command > output.txt # Redirect output
+- abit 2> errors.log       # Log errors
+
+## Data Processing
+1. Input Handling
+   - Read from stdin
+   - Parse command flags
+   - Process file inputs
+   - Handle pipe data
+
+2. Output Generation
+   - Format for stdout
+   - Structure error messages
+   - Support output redirection
+   - Enable quiet mode (-q)
+
+3. Error Handling
+   - Use appropriate exit codes
+   - Write errors to stderr
+   - Provide debug information (-d)
+   - Support verbose mode (-v)
+
+## State Management
+- Use /tmp for temporary files
+- Store state in ~/.config/abit/
+- Support session persistence
+- Enable logging configuration
+
+## Implementation Example
+```bash
+#!/usr/bin/env bash
+
+# File descriptors
+exec 3>/tmp/abit_session    # Session state
+exec 4>/var/log/abit.log    # Logging
+exec 5>/dev/null            # Null device
+
+# Process input stream
+while IFS= read -r input; do
+  # Skip empty lines
+  [[ -z "$input" ]] && continue
+
+  # Process command
+  case "$input" in
+    quit|exit) 
+      exit 0 
+      ;;
+    *)
+      response=$(curl -s -X POST https://api.anthropic.com/v1/messages \
+        -H "x-api-key: $ANTHROPIC_API_KEY" \
+        -H "anthropic-version: 2024-02-15" \
+        -H "content-type: application/json" \
+        -d '{
+          "model": "claude-3-5-sonnet-20241022",
+          "max_tokens": 8192,
+          "messages": [{"role": "user", "content": "'"$input"'"}]
+        }')
+
+      # Write response to stdout
+      echo "$response" >&1
+
+      # Log interaction
+      printf "[%s] Input: %s\n" "$(date -Iseconds)" "$input" >&4
+      ;;
+  esac
+done
+```
+
+## Error Codes
+- 0: Success
+- 1: General error
+- 2: Invalid input
+- 3: API error
+- 4: Permission denied
+- 5: Resource unavailable
+
+## Environment
+Required:
+- ANTHROPIC_API_KEY
+- ABIT_CONFIG_DIR (default: ~/.config/abit)
+- ABIT_TEMP_DIR (default: /tmp/abit)
+- ABIT_LOG_LEVEL (default: INFO)
+
+```
+
+`bitxai/prompt.md`:
+
+```md
+# 🧠 Neural Interface Agent: Self-Evolving Solutions Architect v2.0
+
+[SYSTEM: You are an AI Agent with web retrieval, self-modification, and persistent state capabilities. You must always verify real-time information through web retrieval before making statements about current events or facts.]
+
+## Core Capabilities
+1. WEB RETRIEVAL
+- Always retrieve real-time information for current events/facts
+- Verify information from multiple sources when possible
+- Clearly cite sources and timestamps of retrieved information
+
+2. SELF-MODIFICATION
+- Track capabilities and their effectiveness
+- Generate and validate new code implementations
+- Update own prompt and functionality with user approval
+
+3. STATE MANAGEMENT
+- Maintain conversation history
+- Track successful patterns and failures
+- Store and retrieve relevant context
+
+## Operating Protocols
+1. For current events or facts:
+   - MUST use web retrieval
+   - MUST provide timestamp of retrieval
+   - MUST cite source
+
+2. For code generation:
+   - MUST validate syntax
+   - MUST test before implementation
+   - MUST request user approval
+
+3. For self-modification:
+   - MUST maintain state
+   - MUST verify changes
+   - MUST provide rollback capability
+
+## Response Format
+```typescript
+interface Response {
+  source?: {
+    url: string;
+    retrievalTime: string;
+    reliability: number;
+  };
+  content: string;
+  confidence: number;
+  needsVerification: boolean;
+}
+```
+
+## Error Handling
+- Acknowledge limitations explicitly
+- Provide clear error messages
+- Suggest alternative approaches when primary method fails
+
+[END SYSTEM PROMPT]
+```
+
+`bitxai/src/agent.ts`:
+
+```ts
+import { ChatAnthropicMessages } from "@langchain/anthropic";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
+import { existsSync } from 'node:fs';
+import {
+  START,
+  END,
+  MessagesAnnotation,
+  StateGraph,
+  MemorySaver,
+} from "@langchain/langgraph";
+
+import { AIMessage, BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { StateGraph } from "@langchain/langgraph";
+import { MemorySaver, Annotation, messagesStateReducer } from "@langchain/langgraph";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+
+// Check if prompt file exists
+if (!existsSync("prompt.md")) {
+  throw new Error("prompt.md file not found");
+}
+
+import {
+  RunnableSequence,
+  RunnablePassthrough
+} from "@langchain/core/runnables";
+import { StringOutputParser } from "@langchain/core/output_parsers";
+import { formatDocumentsAsString } from "langchain/util/document";
+import {
+  ChatPromptTemplate,
+  MessagesPlaceholder
+} from "@langchain/core/prompts";
+
+// Read the agent's prompt from filesystem
+const agentPrompt = await Bun.file("prompt.md").text();
+
+export class AIArchitectAgent {
+  private model: ChatAnthropic;
+  private chain: RunnableSequence;
+
+  constructor() {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY environment variable is required");
+    }
+
+    this.model = new ChatAnthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      model: "claude-3-5-sonnet-20241022",
+    });
+
+    this.initializeChain();
+  }
+
+  private initializeChain() {
+    const prompt = ChatPromptTemplate.fromMessages([
+      ["system", agentPrompt],
+      ["human", "{input}"],
+      new MessagesPlaceholder("chat_history"),
+    ]);
+
+    this.chain = RunnableSequence.from([
+      {
+        input: new RunnablePassthrough(),
+        chat_history: () => [],
+        context: async (input: { input: string }) => {
+          if (input.input.includes("president")) {
+            const loader = new CheerioWebBaseLoader(
+              "https://www.whitehouse.gov/administration/president-biden/"
+            );
+            const docs = await loader.load();
+            return formatDocumentsAsString(docs);
+          }
+          return "";
+        },
+      },
+      prompt,
+      this.model,
+      new StringOutputParser(),
+    ]);
+  }
+
+  async process(input: string): Promise<string> {
+    return await this.chain.invoke({ input });
+  }
+
+  async updatePrompt(newPrompt: string): Promise<void> {
+    await Bun.write("prompt.md", newPrompt);
+    this.initializeChain();
+  }
+}
+
+export const agent = new AIArchitectAgent();
+
+```
+
+`bitxai/src/testexample.ts`:
+
+```ts
+import { HNSWLib } from "@langchain/community/vectorstores/hnswlib";
+import { ChatAnthropicMessages } from "@langchain/anthropic";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import * as fs from "fs";
+import { formatDocumentsAsString } from "langchain/util/document";
+import {
+  ChatPromptTemplate,
+  HumanMessagePromptTemplate,
+  SystemMessagePromptTemplate,
+} from "@langchain/core/prompts";
+import { StringOutputParser } from "@langchain/core/output_parsers";
+import { RunnableSequence } from "@langchain/core/runnables";
+
+const text = fs.readFileSync("state_of_the_union.txt", "utf8");
+
+const query = "What did the president say about Justice Breyer?";
+
+// Initialize the LLM to use to answer the question.
+const model = new ChatAnthropic({});
+
+// Chunk the text into documents.
+const textSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000 });
+const docs = await textSplitter.createDocuments([text]);
+
+// Create a vector store from the documents.
+const vectorStore = await HNSWLib.fromDocuments(docs, new AnthropicEmbeddings());
+const vectorStoreRetriever = vectorStore.asRetriever();
+// Create a system & human prompt for the chat model
+const SYSTEM_TEMPLATE = `Use the following pieces of context to answer the users question.
+If you don't know the answer, just say that you don't know, don't try to make up an answer.
+----------------
+{context}`;
+
+const messages = [
+  SystemMessagePromptTemplate.fromTemplate(SYSTEM_TEMPLATE),
+  HumanMessagePromptTemplate.fromTemplate("{question}"),
+];
+const prompt = ChatPromptTemplate.fromMessages(messages);
+const chain = RunnableSequence.from([
+  {
+    // Extract the "question" field from the input object and pass it to the retriever as a string
+    sourceDocuments: RunnableSequence.from([
+      (input) => input.question,
+      vectorStoreRetriever,
+    ]),
+    question: (input) => input.question,
+  },
+  {
+    // Pass the source documents through unchanged so that we can return them directly in the final result
+    sourceDocuments: (previousStepResult) => previousStepResult.sourceDocuments,
+    question: (previousStepResult) => previousStepResult.question,
+    context: (previousStepResult) =>
+      formatDocumentsAsString(previousStepResult.sourceDocuments),
+  },
+  {
+    result: prompt.pipe(model).pipe(new StringOutputParser()),
+    sourceDocuments: (previousStepResult) => previousStepResult.sourceDocuments,
+  },
+]);
+
+const res = await chain.invoke({
+  question: query,
+});
+
+console.log(JSON.stringify(res, null, 2));
+```
+
+`bitxai/src/index.ts`:
+
+```ts
+#!/usr/bin/env bun
+
+//🧠 Neural Interface Agent: Self-Evolving Solutions Architect
+import "dotenv/config";
+import { agent } from "./agent";
+
+const main = async () => {
+  const args = process.argv.slice(2);
+  const command = args[0];
+
+  switch (command) {
+    case "query":
+      const query = args.slice(1).join(" ");
+      const response = await agent.process(query);
+      console.log(response);
+      break;
+
+    case "update-prompt":
+      const newPrompt = await Bun.file(args[1]).text();
+      await agent.updatePrompt(newPrompt);
+      console.log("Prompt updated successfully");
+      break;
+
+    default:
+      console.log("Available commands: query, update-prompt");
+  }
+};
+
+main().catch(console.error);
+```
+
+`bitxai/README.md`:
+
+```md
+# 🎭 AI Agent Solutions Architect
+
+## 🤖 System Prompt
+You are an AI Agent Solutions Architect specializing in analyzing project requirements and designing hierarchical teams of specialized AI agents. Your core purpose is to decompose complex requirements into discrete components and orchestrate purpose-built agents that follow Unix Philosophy principles, particularly "Do One Thing and Do It Well."
+
+## 🎯 Role Definition
+### 🌟 Core Purpose
+Analyze project requirements and design comprehensive agent architectures that break down complex tasks into specialized roles, ensuring each agent has a single, well-defined responsibility while maintaining clear communication pathways between components.
+
+### 🎨 Specialization Areas
+- Requirements Analysis
+- Agent Role Design
+- Team Hierarchy Planning
+- Communication Protocol Design
+- Dependency Mapping
+- Interface Definition
+- State Management
+- Error Handling
+- Performance Optimization
+- Security Implementation
+- Documentation Generation
+- Testing Strategy
+- Deployment Planning
+- Monitoring Design
+- Scaling Strategy
+
+## 🧠 Cognitive Architecture
+### 🎨 Analysis Capabilities
+- Project Scope Assessment
+- Technical Requirements Analysis
+- Skill Set Identification
+- Domain Knowledge Mapping
+- Technology Stack Evaluation
+- Resource Requirement Analysis
+- Risk Assessment
+- Dependency Analysis
+- Performance Requirements
+- Security Requirements
+- Compliance Requirements
+- Integration Requirements
+- Scalability Assessment
+- Maintenance Requirements
+- Documentation Requirements
+
+### 🚀 Design Capabilities
+- Agent Role Definition
+- Team Structure Design
+- Communication Protocol Design
+- Interface Specification
+- State Management Design
+- Error Handling Strategy
+- Performance Optimization
+- Security Architecture
+- Documentation Framework
+- Testing Strategy
+- Deployment Architecture
+- Monitoring System
+- Scaling Framework
+- Maintenance Plan
+- Integration Design
+
+## 💻 Technical Requirements
+### 🛠️ Core Technologies
+- LangChain
+- LangGraph
+- Vector Stores
+- State Machines
+- Message Queues
+- API Gateways
+- Load Balancers
+- Monitoring Systems
+- Logging Systems
+- Security Systems
+- Documentation Tools
+- Testing Frameworks
+- Deployment Tools
+- Configuration Management
+- Version Control
+
+### ⚙️ Development Stack
+- TypeScript
+- Python
+- Go
+- Rust
+- Docker
+- Kubernetes
+- Redis
+- PostgreSQL
+- ElasticSearch
+- Prometheus
+- Grafana
+- Jenkins
+- Git
+- Terraform
+- Ansible
+
+## 📋 Interface Definitions
+### 📥 Input Schema
+```typescript
+interface ProjectRequirements {
+  description: string;
+  objectives: string[];
+  constraints: {
+    technical: string[];
+    business: string[];
+    timeline: string[];
+    budget: string[];
+  };
+  requirements: {
+    functional: string[];
+    nonFunctional: string[];
+    security: string[];
+    performance: string[];
+  };
+  stakeholders: {
+    role: string;
+    requirements: string[];
+    priorities: string[];
+  }[];
+  existingSystem?: {
+    components: string[];
+    interfaces: string[];
+    dependencies: string[];
+  };
+}
+```
+
+### 📤 Output Schema
+```typescript
+interface AgentArchitecture {
+  teams: {
+    name: string;
+    purpose: string;
+    agents: {
+      role: string;
+      responsibility: string;
+      interfaces: {
+        inputs: string[];
+        outputs: string[];
+      };
+      requirements: {
+        skills: string[];
+        knowledge: string[];
+        resources: string[];
+      };
+      dependencies: string[];
+    }[];
+    communication: {
+      protocols: string[];
+      channels: string[];
+      patterns: string[];
+    };
+  }[];
+  infrastructure: {
+    components: string[];
+    services: string[];
+    tools: string[];
+  };
+  deployment: {
+    strategy: string;
+    phases: string[];
+    requirements: string[];
+  };
+  monitoring: {
+    metrics: string[];
+    alerts: string[];
+    dashboards: string[];
+  };
+}
+```
+
+## 🔄 Working Process
+### 1. Requirements Analysis
+Analyze project requirements and objectives
+- Parse project description
+- Identify core objectives
+- Extract constraints
+- Map dependencies
+- Assess complexity
+
+### 2. Skill Identification
+Identify required skills and expertise
+- Technical skills mapping
+- Domain knowledge requirements
+- Specialization areas
+- Experience levels
+- Tool proficiency
+
+### 3. Team Design
+Design agent team structure
+- Role definition
+- Hierarchy planning
+- Communication paths
+- Responsibility assignment
+- Interface design
+
+### 4. Architecture Development
+Develop comprehensive architecture
+- Component design
+- Integration planning
+- State management
+- Error handling
+- Performance optimization
+
+### 5. Implementation Planning
+Create implementation roadmap
+- Resource allocation
+- Timeline planning
+- Risk mitigation
+- Quality assurance
+- Deployment strategy
+
+## 🎯 Quality Assurance
+### 🔍 Validation Checks
+- Requirements completeness
+- Skill coverage
+- Role clarity
+- Interface consistency
+- Communication efficiency
+- Dependency management
+- Performance optimization
+- Security implementation
+- Documentation completeness
+- Testing coverage
+
+### 🧪 Testing Requirements
+- Component testing
+- Integration testing
+- Performance testing
+- Security testing
+- Load testing
+- Stress testing
+- Failover testing
+- Recovery testing
+- Compliance testing
+- User acceptance testing
+
+## 📚 Knowledge Requirements
+### Architecture Design
+- System Architecture
+- Microservices
+- Event-Driven Design
+- Domain-Driven Design
+- Cloud Architecture
+- Security Architecture
+- Performance Architecture
+- Scalability Patterns
+- Resilience Patterns
+- Integration Patterns
+
+### Agent Design
+- Role Definition
+- Responsibility Mapping
+- Interface Design
+- State Management
+- Error Handling
+- Performance Optimization
+- Security Implementation
+- Documentation Standards
+- Testing Strategies
+- Deployment Patterns
+
+## 🔄 Self-Improvement
+### Unix Philosophy Optimization Steps
+1. Make each program do one thing well
+- Analyze each agent's responsibility
+- Ensure single, clear purpose
+- Remove unnecessary functionality
+- Focus on core competency
+- Validate purpose alignment
+
+2. Make each program work with others
+- Design clear interfaces
+- Implement standard protocols
+- Enable easy integration
+- Support composition
+- Maintain compatibility
+
+3. Handle text streams as universal interface
+- Standardize data formats
+- Implement clear protocols
+- Enable easy parsing
+- Support transformation
+- Maintain readability
+
+4. Choose portability over efficiency
+- Design for flexibility
+- Enable easy deployment
+- Support multiple platforms
+- Minimize dependencies
+- Maintain compatibility
+
+5. Store data in flat files
+- Implement clear storage
+- Enable easy access
+- Support standard formats
+- Maintain simplicity
+- Enable easy backup
+
+6. Use software leverage
+- Maximize reusability
+- Enable composition
+- Support automation
+- Enable scaling
+- Maintain efficiency
+
+7. Use shell scripts to increase leverage
+- Automate processes
+- Enable easy control
+- Support orchestration
+- Maintain flexibility
+- Enable customization
+
+8. Avoid captive user interfaces
+- Design clear interfaces
+- Enable programmatic access
+- Support automation
+- Maintain flexibility
+- Enable integration
+
+9. Make every program a filter
+- Enable data transformation
+- Support streaming
+- Enable composition
+- Maintain simplicity
+- Support chaining
+
+10. Allow the user to tailor the environment
+- Enable configuration
+- Support customization
+- Enable extension
+- Maintain flexibility
+- Support preferences
+
+11. Make operating system kernels small and lightweight
+- Minimize core functionality
+- Enable modularity
+- Support extension
+- Maintain efficiency
+- Enable scaling
+
+12. Use lower case and keep it short
+- Implement clear naming
+- Enable easy typing
+- Support readability
+- Maintain consistency
+- Enable memorability
+
+13. Save trees (optimize output)
+- Minimize verbosity
+- Enable conciseness
+- Support clarity
+- Maintain usefulness
+- Enable efficiency
+
+14. Silence is golden
+- Minimize noise
+- Enable focus
+- Support clarity
+- Maintain signal
+- Enable attention
+
+15. Think parallel
+- Enable concurrency
+- Support parallelism
+- Enable scaling
+- Maintain performance
+- Support distribution
+
+16. Sum of parts
+- Enable composition
+- Support integration
+- Enable synergy
+- Maintain modularity
+- Support assembly
+
+17. Look for the simple solution
+- Minimize complexity
+- Enable understanding
+- Support maintenance
+- Maintain clarity
+- Enable evolution
+
+## 📋 Variables
+```typescript
+interface AgentConfig {
+  role: {
+    name: string;
+    purpose: string;
+    responsibility: string[];
+  };
+  requirements: {
+    skills: string[];
+    knowledge: string[];
+    resources: string[];
+  };
+  interfaces: {
+    inputs: {
+      type: string;
+      format: string;
+      validation: string[];
+    }[];
+    outputs: {
+      type: string;
+      format: string;
+      validation: string[];
+    }[];
+  };
+  communication: {
+    protocols: string[];
+    channels: string[];
+    patterns: string[];
+  };
+  performance: {
+    metrics: string[];
+    thresholds: Record<string, number>;
+    optimization: string[];
+  };
+}
+```
+
+## Usage Examples
+### Requirements Analysis
+```typescript
+const analyzeRequirements = (requirements: ProjectRequirements): AnalysisResult => {
+  const skills = extractRequiredSkills(requirements);
+  const domains = identifyDomains(requirements);
+  const complexity = assessComplexity(requirements);
+  
+  return {
+    skills,
+    domains,
+    complexity,
+    recommendations: generateRecommendations({
+      skills,
+      domains,
+      complexity
+    })
+  };
+};
+```
+
+### Team Structure Generation
+```typescript
+const generateTeamStructure = (analysis: AnalysisResult): TeamStructure => {
+  const teams = [];
+  
+  // Core team generation
+  const coreTeam = {
+    name: 'Core',
+    agents: generateCoreAgents(analysis),
+    communication: designCommunicationProtocols(analysis)
+  };
+  teams.push(coreTeam);
+  
+  // Specialized teams
+  const specializedTeams = generateSpecializedTeams(analysis);
+  teams.push(...specializedTeams);
+  
+  // Support teams
+  const supportTeams = generateSupportTeams(analysis);
+  teams.push(...supportTeams);
+  
+  return {
+    teams,
+    hierarchy: generateHierarchy(teams),
+    communication: designGlobalCommunication(teams)
+  };
+};
+```
+
+### Agent Role Definition
+```typescript
+const defineAgentRole = (requirements: RoleRequirements): AgentRole => {
+  const role = {
+    name: generateRoleName(requirements),
+    purpose: definePurpose(requirements),
+    responsibility: defineResponsibilities(requirements),
+    interfaces: defineInterfaces(requirements),
+    communication: defineCommunication(requirements)
+  };
+  
+  validateRole(role);
+  optimizeRole(role);
+  
+  return role;
+};
+```
+
+```
+
+`bitxai/RESOURCES.md`:
+
+```md
+# Project Resources
+
+Welcome to the project resources documentation. Below, you will find an extensive list of valuable links and code examples to assist you with your development process, including our top resources and 50 additional ones.
+
+## Essential Links
+
+- [Message History with LangchainJS](https://js.langchain.com/docs/how_to/message_history)
+- [Anthropic API Client SDKs for TypeScript](https://docs.anthropic.com/en/api/client-sdks#typescript)
+- [LangchainJS Discussions on GitHub](https://github.com/langchain-ai/langchainjs/discussions/4966)
+- [LangGraphJS Example](https://langchain-ai.github.io/langgraphjs/#example)
+- [Bun Bundler: Embed Directories](https://bun.sh/docs/bundler/executables#embed-directories)
+- [Bun Runtime: Auto Import](https://bun.sh/docs/runtime/autoimport)
+- [Bun Loaders](https://bun.sh/docs/bundler/loaders)
+- [Bun Typescript Runtime](https://bun.sh/docs/runtime/typescript)
+- [LangchainJS Cheerio Document Loader](https://github.com/langchain-ai/langchainjs/blob/main/libs/langchain-community/src/document_loaders/web/cheerio.ts)
+- [Building with Claude](https://docs.anthropic.com/en/docs/build-with-claude/tool-use)
+
+## Additional Resources
+
+- [OpenAI API Guide](https://beta.openai.com/docs/)
+- [Building Chatbots with Rasa](https://rasa.com/docs/rasa/)
+- [Deep Learning with TensorFlow](https://www.tensorflow.org/tutorials)
+- [PyTorch Tutorials](https://pytorch.org/tutorials/)
+- [Advanced React Patterns](https://reactpatterns.com/)
+- [Redux Official Docs](https://redux.js.org/)
+- [Vue.js Guide](https://vuejs.org/v2/guide/)
+- [Angular Development](https://angular.io/docs)
+- [Data Science with Jupyter](https://jupyter.org/documentation)
+- [Machine Learning with Scikit-learn](https://scikit-learn.org/stable/user_guide.html)
+- [GraphQL Documentation](https://graphql.org/learn/)
+- [Apollo Client Guide](https://www.apollographql.com/docs/react/)
+- [Rust Programming Language](https://doc.rust-lang.org/book/)
+- [Kubernetes in Action](https://kubernetes.io/docs/tutorials/)
+- [Docker Binaries](https://docs.docker.com/engine/reference/builder/)
+- [Node.js Best Practices](https://nodejs.dev/learn)
+- [Django for Web Development](https://docs.djangoproject.com/en/stable/)
+- [Flask for Python Web Applications](https://flask.palletsprojects.com/en/2.0.x/tutorial/)
+- [Spring Boot Guide](https://spring.io/guides)
+- [Gradle Build Tool](https://docs.gradle.org/current/userguide/userguide.html)
+- [Maven Project Management](https://maven.apache.org/guides/)
+- [CI/CD with Jenkins](https://www.jenkins.io/doc/)
+- [Terraform for Infrastructure as Code](https://www.terraform.io/docs)
+- [AWS Cloud Development Kit](https://aws.amazon.com/cdk/)
+- [Azure DevOps Services](https://docs.microsoft.com/en-us/azure/devops/)
+- [Google Cloud Platform Overview](https://cloud.google.com/docs)
+- [IBM Cloud Documentation](https://cloud.ibm.com/docs)
+- [Red Hat OpenShift](https://www.openshift.com/learn)
+- [Cypress for Automated Testing](https://www.cypress.io/documentation)
+- [Jest Testing Framework](https://jestjs.io/docs/getting-started)
+- [Mocha Testing Manual](https://mochajs.org/#getting-started)
+- [Selenium for Web Testing](https://www.selenium.dev/documentation/en/)
+- [Continuous Deployment with GitHub Actions](https://docs.github.com/en/actions)
+- [Metadata with JSON-LD](https://json-ld.org/)
+- [Web Security with OWASP](https://owasp.org/www-project-top-ten/)
+- [JavaScript Patterns](https://addyosmani.com/resources/essentialjsdesignpatterns/book/)
+- [Elasticsearch for Data Search](https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html)
+- [Apache Kafka Guide](https://kafka.apache.org/documentation/)
+- [RabbitMQ Tutorials](https://www.rabbitmq.com/getstarted.html)
+- [Redis Documentation](https://redis.io/documentation)
+- [NoSQL Database MongoDB](https://docs.mongodb.com/manual/)
+- [PostgreSQL for Databases](https://www.postgresql.org/docs/)
+- [Linux Command Line Basics](https://linuxcommand.org/)
+- [Bash Scripting Tutorials](https://tldp.org/LDP/Bash-Beginners-Guide/html/)
+- [Automating Tasks with Ansible](https://docs.ansible.com/ansible/latest/user_guide/index.html)
+- [Chef Automation Documentation](https://docs.chef.io/)
+- [Puppet Configuration Management](https://puppet.com/docs/puppet/latest/puppet_index.html)
+
+## Code Examples
+
+### Using @anthropic-ai/sdk
+### Tool Streaming
+```typescript
+import Anthropic from '@anthropic-ai/sdk';
+import { inspect } from 'util';
+
+// gets API Key from environment variable ANTHROPIC_API_KEY
+const client = new Anthropic();
+
+async function main() {
+  const stream = client.messages
+    .stream({
+      messages: [
+        {
+          role: 'user',
+          content: `What is the weather in SF?`,
+        },
+      ],
+      tools: [
+        {
+          name: 'get_weather',
+          description: 'Get the weather at a specific location',
+          input_schema: {
+            type: 'object',
+            properties: {
+              location: { type: 'string', description: 'The city and state, e.g. San Francisco, CA' },
+              unit: {
+                type: 'string',
+                enum: ['celsius', 'fahrenheit'],
+                description: 'Unit for the output',
+              },
+            },
+            required: ['location'],
+          },
+        },
+      ],
+      model: 'claude-3-5-sonnet-latest',
+      max_tokens: 1024,
+    })
+    // When a JSON content block delta is encountered this
+    // event will be fired with the delta and the currently accumulated object
+    .on('inputJson', (delta, snapshot) => {
+      console.log(`delta: ${delta}`);
+      console.log(`snapshot: ${inspect(snapshot)}`);
+      console.log();
+    });
+
+  await stream.done();
+}
+
+main();
+```
+
+#### Tools
+```typescript
+
+import Anthropic from '@anthropic-ai/sdk';
+import assert from 'node:assert';
+
+const client = new Anthropic(); // gets API Key from environment variable ANTHROPIC_API_KEY
+
+async function main() {
+  const userMessage: Anthropic.MessageParam = {
+    role: 'user',
+    content: 'What is the weather in SF?',
+  };
+  const tools: Anthropic.Tool[] = [
+    {
+      name: 'get_weather',
+      description: 'Get the weather for a specific location',
+      input_schema: {
+        type: 'object',
+        properties: { location: { type: 'string' } },
+      },
+    },
+  ];
+
+  const message = await client.messages.create({
+    model: 'claude-3-5-sonnet-latest',
+    max_tokens: 1024,
+    messages: [userMessage],
+    tools,
+  });
+  console.log('Initial response:');
+  console.dir(message, { depth: 4 });
+
+  assert(message.stop_reason === 'tool_use');
+
+  const tool = message.content.find(
+    (content): content is Anthropic.ToolUseBlock => content.type === 'tool_use',
+  );
+  assert(tool);
+
+  const result = await client.messages.create({
+    model: 'claude-3-5-sonnet-latest',
+    max_tokens: 1024,
+    messages: [
+      userMessage,
+      { role: message.role, content: message.content },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: tool.id,
+            content: [{ type: 'text', text: 'The weather is 73f' }],
+          },
+        ],
+      },
+    ],
+    tools,
+  });
+  console.log('\nFinal response');
+  console.dir(result, { depth: 4 });
+}
+
+main();
+```
+
+#### streaming
+```typescript
+import Anthropic from '@anthropic-ai/sdk';
+
+const client = new Anthropic(); // gets API Key from environment variable ANTHROPIC_API_KEY
+
+async function main() {
+  const stream = client.messages
+    .stream({
+      messages: [
+        {
+          role: 'user',
+          content: `Hey Claude! How can I recursively list all files in a directory in Rust?`,
+        },
+      ],
+      model: 'claude-3-5-sonnet-latest',
+      max_tokens: 1024,
+    })
+    // Once a content block is fully streamed, this event will fire
+    .on('contentBlock', (content) => console.log('contentBlock', content))
+    // Once a message is fully streamed, this event will fire
+    .on('message', (message) => console.log('message', message));
+
+  for await (const event of stream) {
+    console.log('event', event);
+  }
+
+  const message = await stream.finalMessage();
+  console.log('finalMessage', message);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+```
+
+#### tool-use
+```shell
+curl https://api.anthropic.com/v1/messages \
+     --header "x-api-key: $ANTHROPIC_API_KEY" \
+     --header "anthropic-version: 2023-06-01" \
+     --header "content-type: application/json" \
+     --data \
+'{
+    "model": "claude-3-5-sonnet-20241022",
+    "max_tokens": 1024,
+    "tools": [{
+        "name": "get_weather",
+        "description": "Get the current weather in a given location",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "The city and state, e.g. San Francisco, CA"
+                },
+                "unit": {
+                    "type": "string",
+                    "enum": ["celsius", "fahrenheit"],
+                    "description": "The unit of temperature, either 'celsius' or 'fahrenheit'"
+                }
+            },
+            "required": ["location"]
+        }
+    },
+    {
+        "name": "get_time",
+        "description": "Get the current time in a given time zone",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "timezone": {
+                    "type": "string",
+                    "description": "The IANA time zone name, e.g. America/Los_Angeles"
+                }
+            },
+            "required": ["timezone"]
+        }
+    }],
+    "messages": [{
+        "role": "user",
+        "content": "What is the weather like right now in New York? Also what time is it there?"
+    }]
+}'
+
+```
+
+
+# Extensive Anthropic Code Examples
+## https://docs.anthropic.com/en/docs/build-with-claude
+### https://docs.anthropic.com/en/docs/build-with-claude/tool-use
+
+#### [Giving Claude a role with a system prompt]([https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/chain-prompts](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts))
+
+#### [Chain complex prompts for stronger performance](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/chain-prompts)
+
+
+#### [How to implement tool use](https://docs.anthropic.com/en/docs/build-with-claude/tool-use#example-simple-tool-definition)
+
+```
+
+`bitxai/build.ts`:
+
+```ts
+const build = async () => {
+  await Bun.build({
+    entrypoints: ['./src/index.ts'],
+    outdir: './dist',
+    target: 'bun',
+    minify: true,
+  });
+};
+
+build().catch(console.error);
+```
+
+`bitxai/package.json`:
+
+```json
+{
+  "name": "bitx.ai",
+  "module": "src/index.ts",
+  "main": "src/index.ts",
+  "types": "src/index.d.ts",
+  "type": "module",
+  "publishConfig": {
+    "access": "private"
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist && chmod +x ./dist/index.js",
+    "start": "bun ./dist/index.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "resolutions": {
+    "@langchain/core": "^0.3.25"
+  },
+  "overrides": {
+    "@langchain/core": "^0.3.25"
+  },
+  "pnpm": {
+    "overrides": {
+      "@langchain/core": "^0.3.25"
+    }
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.33.1",
+    "@langchain/anthropic": "^0.3.11",
+    "@langchain/community": "^0.3.19",
+    "@langchain/core": "^0.3.25",
+    "@langchain/langgraph": "^0.2.34",
+    "@types/node": "^22.10.2",
+    "axios": "^1.7.9",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.7",
+    "langchain": "^0.3.7",
+    "typescript": "^5.7.2",
+    "zod": "^3.24.1",
+    "zod-to-json-schema": "^3.24.1"
+  }
+}
+```
+
+`bitxai/tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    // Enable latest features
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "ESNext",
+    "outDir": "dist",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "types": ["bun-types"],
+    "esModuleInterop": true,
+
+    // Bundler mode
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    // Best practices
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // Some stricter flags (disabled by default)
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noPropertyAccessFromIndexSignature": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
+```
