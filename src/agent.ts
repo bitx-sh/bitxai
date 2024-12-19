@@ -4,6 +4,14 @@
 import { ChatAnthropicMessages } from "@langchain/anthropic";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
+
+import { existsSync } from 'node:fs';
+
+// Check if prompt file exists
+if (!existsSync("prompt.md")) {
+  throw new Error("prompt.md file not found");
+}
+
 import {
   RunnableSequence,
   RunnablePassthrough
@@ -28,10 +36,6 @@ export class AIArchitectAgent {
 
 
   constructor() {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY environment variable is required");
-    }
-    
     this.model = new ChatAnthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
       model: "claude-3-5-sonnet-20240620",
@@ -42,6 +46,10 @@ export class AIArchitectAgent {
   }
 
   private async initializeChain() {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY environment variable is required");
+    }
+    
     const prompt = ChatPromptTemplate.fromMessages([
       ["system", agentPrompt],
       ["human", "{input}"],
