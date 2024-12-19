@@ -8,8 +8,8 @@
     "access": "private"
   },
   "scripts": {
-    "build": "bun build.ts",
-    "start": "bun dist/index.js"
+    "build": "bun build ./src/index.ts --outdir ./dist && chmod +x ./dist/index.js",
+    "start": "bun ./dist/index.js"
   },
   "devDependencies": {
     "@types/bun": "latest"
