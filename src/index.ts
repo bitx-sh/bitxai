@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 //🧠 Neural Interface Agent: Self-Evolving Solutions Architect
+import "dotenv/config";
 import { agent } from "./agent";
 
 const main = async () => {

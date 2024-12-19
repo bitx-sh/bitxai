@@ -36,6 +36,10 @@ export class AIArchitectAgent {
 
 
   constructor() {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY environment variable is required");
+    }
+
     this.model = new ChatAnthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
       model: "claude-3-5-sonnet-20240620",
