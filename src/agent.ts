@@ -34,9 +34,7 @@ class FileSystemChatHistory {
   private messages: ChatMessage[] = [];
 
   constructor() {
-    this.loadMessages().catch(err => {
-      console.error("Failed to load chat history:", err);
-    });
+    this.loadMessages();
   }
 
   private async loadMessages() {
@@ -84,7 +82,15 @@ if (!existsSync("prompt.md")) {
 }
 
 // Read the agent's prompt from filesystem
-const agentPrompt = await Bun.file("prompt.md").text();
+let agentPrompt = "";
+(async () => {
+  try {
+    agentPrompt = await Bun.file("prompt.md").text();
+  } catch (error) {
+    console.error("Error reading the prompt file:", error);
+    throw new Error("Failed to initialize the prompt");
+  }
+})();
 
 export class AIArchitectAgent {
   private model: ChatAnthropic;
@@ -149,7 +155,7 @@ export class AIArchitectAgent {
       timestamp: Date.now(),
     });
 
-    const response = await this.chain.invoke({ query: input });
+    const response = await this.chain.invoke({ query: input }) as string;
 
     await this.chatHistory.addMessage({
       role: 'ai',
@@ -161,8 +167,14 @@ export class AIArchitectAgent {
   }
 
   async updatePrompt(newPrompt: string): Promise<void> {
-    await Bun.write("prompt.md", newPrompt);
-    await this.initializeChain();
+    try {
+      await Bun.write("prompt.md", newPrompt);
+      agentPrompt = newPrompt;
+      await this.initializeChain();
+    } catch (error) {
+      console.error("Error updating prompt:", error);
+      throw new Error("Failed to update the prompt");
+    }
   }
 
   // Add method to clear chat history

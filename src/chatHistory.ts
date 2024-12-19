@@ -3,7 +3,7 @@ import { existsSync, promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
+  role: 'human' | 'ai' | 'system';
   content: string;
   timestamp: number;
   messageId: string;
