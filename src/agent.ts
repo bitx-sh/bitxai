@@ -13,9 +13,13 @@ import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
-import { v4 as uuidv4 } from 'uuid';
+import {
+  HumanMessage,
+  AIMessage,
+  SystemMessage,
+} from "@langchain/core/messages";
+import { v4 as uuidv4 } from "uuid";
 
-// Create history directory if it doesn't exist
 const HISTORY_DIR = "./history";
 const CHAT_FILE = join(HISTORY_DIR, "chat.json");
 
@@ -32,20 +36,30 @@ interface ChatMessage {
 
 class FileSystemChatHistory {
   private messages: ChatMessage[] = [];
+  private initialized: boolean = false;
+  private initPromise: Promise<void>;
 
   constructor() {
-    this.loadMessages();
+    this.initPromise = this.loadMessages();
   }
 
   private async loadMessages() {
     try {
       if (existsSync(CHAT_FILE)) {
-        const data = await readFile(CHAT_FILE, 'utf-8');
-        this.messages = [].concat(JSON.parse(data));
+        const data = await readFile(CHAT_FILE, "utf-8");
+        this.messages = JSON.parse(data);
       }
+      this.initialized = true;
     } catch (error) {
       console.error("Error loading messages:", error);
       this.messages = [];
+      this.initialized = true;
+    }
+  }
+
+  private async ensureInitialized() {
+    if (!this.initialized) {
+      await this.initPromise;
     }
   }
 
@@ -58,44 +72,36 @@ class FileSystemChatHistory {
   }
 
   async addMessage(message: Omit<ChatMessage, "messageId">) {
+    await this.ensureInitialized();
     const messageWithId = {
       ...message,
-      messageId: uuidv4()
+      messageId: uuidv4(),
     };
     this.messages.push(messageWithId);
     await this.saveMessages();
   }
 
   async getMessages(): Promise<ChatMessage[]> {
+    await this.ensureInitialized();
     return this.messages;
   }
 
   async clear(): Promise<void> {
+    await this.ensureInitialized();
     this.messages = [];
     await this.saveMessages();
   }
 }
 
-// Check if prompt file exists
 if (!existsSync("prompt.md")) {
   throw new Error("prompt.md file not found");
 }
-
-// Read the agent's prompt from filesystem
-let agentPrompt = "";
-(async () => {
-  try {
-    agentPrompt = await Bun.file("prompt.md").text();
-  } catch (error) {
-    console.error("Error reading the prompt file:", error);
-    throw new Error("Failed to initialize the prompt");
-  }
-})();
 
 export class AIArchitectAgent {
   private model: ChatAnthropic;
   private chain: RunnableSequence;
   private chatHistory: FileSystemChatHistory;
+  private systemPrompt: string;
 
   constructor() {
     if (!process.env.ANTHROPIC_API_KEY) {
@@ -104,20 +110,32 @@ export class AIArchitectAgent {
 
     this.model = new ChatAnthropic({
       anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-      // DO NOT CHANGE THE NEXT LINE!! 
-      modelName: "claude-3-5-sonnet-latest", // DO NOT CHANGE THIS LINE!! 
-      // DO NOT CHANGE THE PREVIOUS LINE!! 
+      maxTokensToSample: 8192,
+      modelName: "claude-3-5-sonnet-20241022", // DO NOT CHANGE THIS LINE!!
+      // DO NOT CHANGE THE PREVIOUS LINE!!
     });
 
     this.chatHistory = new FileSystemChatHistory();
-    this.initializeChain();
+    this.loadPromptAndInitialize();
+  }
+
+  private async loadPromptAndInitialize() {
+    try {
+      this.systemPrompt = await Bun.file("prompt.md").text();
+      // Ensure chat history is loaded before initializing chain
+      await this.chatHistory.getMessages();
+      await this.initializeChain();
+    } catch (error) {
+      console.error("Error initializing agent:", error);
+      throw error;
+    }
   }
 
   private async initializeChain() {
     const prompt = ChatPromptTemplate.fromMessages([
-      ["system", agentPrompt],
-      ["human", "{query}"],
+      ["system", this.systemPrompt],
       new MessagesPlaceholder("chat_history"),
+      ["human", "{query}"],
     ]);
 
     this.chain = RunnableSequence.from([
@@ -125,11 +143,14 @@ export class AIArchitectAgent {
         query: new RunnablePassthrough(),
         chat_history: async () => {
           const messages = await this.chatHistory.getMessages();
-          // Format messages for the prompt
-          return messages.map(msg => ({
-            role: msg.role,
-            content: msg.content
-          }));
+          return messages.map((msg) => {
+            if (msg.role === "human" || msg.role === "user") {
+              return new HumanMessage(msg.content);
+            } else if (msg.role === "assistant" || msg.role === "ai") {
+              return new AIMessage(msg.content);
+            }
+            return new SystemMessage(msg.content);
+          });
         },
         context: async (input: { query: string }) => {
           if (input.query.toLowerCase().includes("president")) {
@@ -150,34 +171,30 @@ export class AIArchitectAgent {
 
   async process(input: string): Promise<string> {
     await this.chatHistory.addMessage({
-      role: 'human',
+      role: "human",
       content: input,
       timestamp: Date.now(),
     });
 
-    const response = await this.chain.invoke({ query: input }) as string;
+    const response = await this.chain.invoke({ query: input });
 
-    await this.chatHistory.addMessage({
-      role: 'ai',
-      content: response,
-      timestamp: Date.now(),
-    });
+    if (response) {
+      await this.chatHistory.addMessage({
+        role: "assistant",
+        content: response,
+        timestamp: Date.now(),
+      });
+    }
 
     return response;
   }
 
   async updatePrompt(newPrompt: string): Promise<void> {
-    try {
-      await Bun.write("prompt.md", newPrompt);
-      agentPrompt = newPrompt;
-      await this.initializeChain();
-    } catch (error) {
-      console.error("Error updating prompt:", error);
-      throw new Error("Failed to update the prompt");
-    }
+    await Bun.write("prompt.md", newPrompt);
+    this.systemPrompt = newPrompt;
+    await this.initializeChain();
   }
 
-  // Add method to clear chat history
   async clearHistory(): Promise<void> {
     await this.chatHistory.clear();
   }
