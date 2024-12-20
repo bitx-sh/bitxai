@@ -1,4 +1,4 @@
-entrypoint = "index.ts"
+entrypoint = "src/index.ts"
 
 hidden = [".config", "bun.lockb"]
 modules = ["bun-1.1"]
@@ -13,5 +13,3 @@ build = [
   "mkdir .build && bun build --compile src/index.ts -o .bin/bitai",
 ]
 run = ["bun", "src/index.ts"]
-
-[[ports]]
